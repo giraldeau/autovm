@@ -1,0 +1,6 @@
+2014-03-13  Francis Giraldeau  <francis.giraldeau@gmail.com>
+
+	Import template
+	Initial autovm skeleton
+
+	Initial import
