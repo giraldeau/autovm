@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # coding=utf-8
 
+import os
 from os.path import join, dirname, exists
 from os import makedirs, utime, unlink, walk
-
+import stat
+from heapq import heappush, heappop, heappushpop
 # http://stackoverflow.com/questions/12654772/create-empty-file-using-python
 def touch(path):
     d = dirname(path)
@@ -33,6 +35,33 @@ class CountWalkerVisitor(AbstractWalkerVisitor):
     def visit_dir(self, root, name):
         self.directories += 1
 
+class FileEntry(object):
+    def __init__(self, path):
+        self.path = path
+        self.st = os.stat(path)
+    def __cmp__(self, other):
+        if (self.st.st_mtime < other.st.st_mtime):
+            return 1
+        elif (self.st.st_mtime == other.st.st_mtime):
+            return 0
+        return -1
+    def __repr__(self):
+        return "%s %s" % (str(self.st.st_mtime), self.path)
+
+class LRUWalkerVisitor(AbstractWalkerVisitor):
+    'make the list of least used files'
+    def __init__(self, max_item=100):
+        self.heap = []
+        self.max_item = max_item
+    def visit_file(self, root, name):
+        item = FileEntry(join(root, name))
+        if len(self.heap) < self.max_item:
+            heappush(self.heap, item)
+        else:
+            heappushpop(self.heap, item)
+    def get_entries(self):
+        return [heappop(self.heap) for i in range(len(self.heap))]
+        
 class DeleteWalkerVisitor(AbstractWalkerVisitor):
     def visit_file(self, root, name):
         unlink(join(root, name))
