@@ -4,19 +4,20 @@ Created on Mar 13, 2014
 @author: francis
 '''
 
-from os.path import join, isdir, exists
+from os.path import join, isdir, exists, dirname
 from os import makedirs, unlink
-from shutil import copyfile
+from shutil import copyfileobj
 from autovm.helpers import Walker, DeleteWalkerVisitor, CountWalkerVisitor
 from autovm.helpers import LRUWalkerVisitor, touch
 from threading import Lock
+import urllib2
+import base64
 
 class AbstractFileProvider(object):
     def fetch(self, name):
         'returns the path to the requested file'
         pass
-    def done(self, name):
-        'called after the file is added to the cache'
+    def get_path(self, name):
         pass
 
 class LocalFileProvider(AbstractFileProvider):
@@ -24,17 +25,29 @@ class LocalFileProvider(AbstractFileProvider):
         self.path = path
     def fetch(self, name):
         'returns the local path of the requested file'
-        return join(self.path, name)
+        return open(join(self.path, name), "rb")
+    def get_path(self, name):
+        return name
 
 class HTTPFileProvider(AbstractFileProvider):
     def __init__(self, domain, basic_auth_username=None,
                  basic_auth_password=None):
         self.domain = domain
-        self.basic_auth_username = basic_auth_username
-        self.basic_auth_password = basic_auth_password
+        self.username = basic_auth_username
+        self.password = basic_auth_password
     def fetch(self, name):
-        pass
-
+        url = "http://%s/%s" % (self.domain, name)
+        req = urllib2.Request(url, None)
+        
+        if self.username is not None and self.password is not None:
+            base64string = base64.encodestring('%s:%s' % (self.username, self.password))[:-1]
+            authheader =  "Basic %s" % base64string
+            req.add_header("Authorization", authheader)
+        r = urllib2.urlopen(req)
+        return r
+    def get_path(self, name):
+        return "%s/%s" % (self.domain, name)
+        
 class FileCache(object):
     '''
     Maintain LRU file cache
@@ -61,23 +74,31 @@ class FileCache(object):
             makedirs(self.cache)
         
         self.max_size = max_size
+        self.hit = self.miss = 0
     
     def get_file(self, name):
         with FileCache.lock:
             'get the required file'
-            target = join(self.cache, name)
+            path = self.provider.get_path(name)
+            target = join(self.cache, path)
             if exists(target):
                 touch(target)
+                self.hit += 1
                 return target
-            source = self.provider.fetch(name)
-            copyfile(source, target)
-            self.provider.done(name)
+            self.miss += 1
+            src = self.provider.fetch(name)
+            if not exists(dirname(target)):
+                makedirs(dirname(target))
+            with open(target, "wb") as dst:
+                copyfileobj(src, dst)
+            src.close()
             return target
     
     def has_file(self, name):
         'check if file exists in the cache'
         with FileCache.lock:
-            return exists(join(self.cache, name))
+            path = self.provider.get_path(name)
+            return exists(join(self.cache, path))
     
     def clear(self):
         'remove all cache entries'
@@ -102,8 +123,7 @@ class FileCache(object):
     
     def _lru_entries(self, max_entries):
         'perform LRU based on modification time'
-        with FileCache.lock:
-            w = Walker()
-            lru = LRUWalkerVisitor(max_entries)
-            w.process(self.cache, lru)
-            return lru.get_entries()
+        w = Walker()
+        lru = LRUWalkerVisitor(max_entries)
+        w.process(self.cache, lru)
+        return lru.get_entries()
