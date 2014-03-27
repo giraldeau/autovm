@@ -4,8 +4,58 @@
 import os
 from os.path import join, dirname, exists
 from os import makedirs, utime, unlink, walk
-import stat
 from heapq import heappush, heappop, heappushpop
+import platform
+import sys
+
+def terminal_size():
+    import fcntl, termios, struct
+    h, w, hp, wp = struct.unpack('HHHH',
+        fcntl.ioctl(0, termios.TIOCGWINSZ,
+        struct.pack('HHHH', 0, 0, 0, 0)))
+    return w, h
+
+def default_dist():
+    (a, b, c) = platform.dist()
+    return c
+
+def default_arch():
+    mapping = { 'x86_64': 'amd64', 'i386': 'i386' }
+    arch = platform.machine()
+    return mapping.get(arch, 'amd64')
+
+class NullProgressMonitor(object):
+    def __init__(self, msg="progress"):
+        pass
+    def update(self, percent):
+        pass
+
+class CmdProgressMonitor(object):
+    def __init__(self, msg="progress"):
+        self.msg = msg
+    def update(self, percent):
+        (w, h) = terminal_size()
+        bar = w - len(self.msg) - 10
+        rep = int((bar * percent) + 1)
+        blank = bar - rep
+        sys.stdout.write("%s %s%s %.1f%%\r" % (self.msg, ' ' * blank,  '#' * rep, percent * 100.0))
+
+null_progress = NullProgressMonitor()
+
+def copyfileobj_progress(fsrc, fdst, size, length=16*1024, progress=null_progress):
+    """copy data from file-like object fsrc to file-like object fdst"""
+    total = 0.0
+    if size == 0:
+        return
+    while 1:
+        progress.update(total / size)
+        buf = fsrc.read(length)
+        total += len(buf)
+        if not buf:
+            break
+        fdst.write(buf)
+    progress.update(1.0)
+
 # http://stackoverflow.com/questions/12654772/create-empty-file-using-python
 def touch(path):
     d = dirname(path)
@@ -16,15 +66,21 @@ def touch(path):
 
 class AbstractWalkerVisitor(object):
     def visit_file(self, root, name):
-        print "f %s" % repr(join(root, name))
+        pass
     def visit_dir(self, root, name):
-        print "d %s" % repr(join(root, name))
+        pass
 
 class PrintWalkerVisitor(AbstractWalkerVisitor):
     def visit_file(self, root, name):
         print "f %s" % repr(join(root, name))
     def visit_dir(self, root, name):
         print "d %s" % repr(join(root, name))
+
+class EntriesWalkerVisitor(AbstractWalkerVisitor):
+    def __init__(self):
+        self.entries = []
+    def visit_file(self, root, name):
+        self.entries.append(join(root, name))
 
 class CountWalkerVisitor(AbstractWalkerVisitor):
     def __init__(self):
