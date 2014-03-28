@@ -8,13 +8,6 @@ from heapq import heappush, heappop, heappushpop
 import platform
 import sys
 
-def terminal_size():
-    import fcntl, termios, struct
-    h, w, hp, wp = struct.unpack('HHHH',
-        fcntl.ioctl(0, termios.TIOCGWINSZ,
-        struct.pack('HHHH', 0, 0, 0, 0)))
-    return w, h
-
 def default_dist():
     (a, b, c) = platform.dist()
     return c
@@ -33,24 +26,28 @@ class NullProgressMonitor(object):
 class CmdProgressMonitor(object):
     def __init__(self, msg="progress"):
         self.msg = msg
+        self.width = 10
+        self.percent = 0.0
     def update(self, percent):
-        (w, h) = terminal_size()
-        bar = w - len(self.msg) - 10
-        rep = int((bar * percent) + 1)
-        blank = bar - rep
-        sys.stdout.write("%s %s%s %.1f%%\r" % (self.msg, ' ' * blank,  '#' * rep, percent * 100.0))
+        if (percent - self.percent < 0.001):
+            return
+        self.percent = percent
+        ticks = ((int(percent * 100) + 5) / self.width)
+        blank = self.width - ticks
+        sys.stdout.write("%s [%s%s] %.1f%%\r" % (self.msg, '#' * ticks,  ' ' * blank, self.percent * 100))
+        sys.stdout.flush()
 
 null_progress = NullProgressMonitor()
 
 def copyfileobj_progress(fsrc, fdst, size, length=16*1024, progress=null_progress):
     """copy data from file-like object fsrc to file-like object fdst"""
-    total = 0.0
+    sum = 0.0
     if size == 0:
-        return
+        size = 1
     while 1:
-        progress.update(total / size)
+        progress.update(sum / size)
         buf = fsrc.read(length)
-        total += len(buf)
+        sum += len(buf)
         if not buf:
             break
         fdst.write(buf)

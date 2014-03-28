@@ -20,6 +20,9 @@ class UbuntuImageCache(object):
         self.file_cache = FileCache(expanduser(UbuntuImageCache.cache_dir), provider)
     def get_default_image(self):
         return self.get_image(default_dist(), default_arch())
+    def _image_name(self, dist, arch):
+        return UbuntuImageCache.path % {'dist': dist, 'arch': arch}
     def get_image(self, dist, arch, force=False, progress=null_progress):
-        name = UbuntuImageCache.path % {'dist': dist, 'arch': arch}
-        return self.file_cache.get_file(name, force, progress)
+        return self.file_cache.get_file(self._image_name(dist, arch), force, progress)
+    def has_image(self, dist, arch):
+        return self.file_cache.has_file(self._image_name(dist, arch))
